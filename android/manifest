@@ -1,0 +1,19 @@
+#
+# this is your module manifest and used by Titanium
+# during compilation, packaging, distribution, etc.
+#
+version: 1.0.0
+apiversion: 4
+architectures: arm64-v8a armeabi-v7a x86
+description: locationservices
+author: Ahmed Mohamed
+license: MIT
+copyright: Copyright (c) 2018 by Ahmed Mohamed
+
+# these should not be edited
+name: locationservices
+moduleid: com.locationservices
+guid: 37f9cfad-1778-4e2c-8e16-4f45127e102c
+platform: android
+minsdk: 7.4.1.GA
+ 
