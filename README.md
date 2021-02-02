@@ -4,7 +4,7 @@ Turn on GPS settings automatically and get your current or last location.
 
 # Install
 
-1. Get the module from the [releases page](https://github.com/AhmedMSayed/ti.locationservices/releases).
+1. Get the module v2.0 from the [releases page](https://github.com/AhmedMSayed/ti.locationservices/releases/tag/v2.0).
 2. Unzip it, put it in your Titanium project `modules` folder.
 3. Require the module in your application by adding it in your `tiapp.xml`.
 
