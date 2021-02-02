@@ -1,53 +1,142 @@
-//Import Location Services Module
-const locationservices = require('com.locationservices');
-
 const win = Ti.UI.createWindow({
-	backgroundColor : 'white',
-	layout : 'vertical'
+	backgroundColor: 'white'
 });
 
-var myLatitude = Ti.UI.createLabel({
-	text : "My Latitude is : ",
-	color : "#000",
-	font : {
-		fontSize : '16sp'
+const view = Ti.UI.createView({
+	layout: 'vertical',
+	height: Ti.UI.SIZE,
+	width: Ti.UI.FILL
+});
+
+const myLocation = Ti.UI.createLabel({
+	text: "My Location",
+	color: "#000",
+	font: {
+		fontSize: '16sp'
+	}
+});
+
+const getMyCurrentLocation = Ti.UI.createButton({
+	title: "Get Current Location",
+	color: "#fff",
+	backgroundColor: "teal",
+	font: {
+		fontSize: '16sp'
 	},
-	top : 72
+	top: 24
 });
 
-var myLongitude = Ti.UI.createLabel({
-	text : "My Longitude is : ",
-	color : "#000",
-	font : {
-		fontSize : '16sp'
+const getMyLastLocation = Ti.UI.createButton({
+	title: "Get Last Location",
+	color: "#fff",
+	backgroundColor: "teal",
+	font: {
+		fontSize: '16sp'
 	},
-	top : 24
+	top: 16
 });
 
-win.add(myLatitude);
-win.add(myLongitude);
+const startLocationUpdates = Ti.UI.createButton({
+	title: "start Location Updates",
+	color: "#fff",
+	backgroundColor: "teal",
+	font: {
+		fontSize: '16sp'
+	},
+	top: 16
+});
 
-win.addEventListener('open', function() {
-	const locationResults = function(loc) {
-		myLatitude = "My Latitude is : " + loc.latitude;
-		myLongitude = "My Longitude is : " + loc.longitude;
-		Alloy.Globals.locationServices.removeEventListener('location', locationResults);
-	};
+const stopLocationUpdates = Ti.UI.createButton({
+	title: "stop Location Updates",
+	color: "#fff",
+	backgroundColor: "teal",
+	font: {
+		fontSize: '16sp'
+	},
+	top: 16
+});
 
-	if (Ti.Geolocation.hasLocationPermissions(Ti.Geolocation.AUTHORIZATION_WHEN_IN_USE)) {
-		locationservices.initialize();
-		locationservices.addEventListener('location', locationResults);
-	} else {
-		Ti.Geolocation.requestLocationPermissions(Ti.Geolocation.AUTHORIZATION_WHEN_IN_USE, function(e) {
-			if (e.success) {
-				locationservices.initialize();
-				locationservices.addEventListener('location', locationResults);
+view.add(myLocation);
+view.add(getMyCurrentLocation);
+view.add(getMyLastLocation);
+view.add(startLocationUpdates);
+view.add(stopLocationUpdates);
+win.add(view);
+
+//Import Location Services Module
+const locationservices = require('ti.locationservices');
+
+getMyCurrentLocation.addEventListener("click", () => {
+	locationservices.checkLocationSettings({
+		onComplete: (check) => {
+			if (check.success) {
+				locationservices.getCurrentLocation({
+					onComplete: (location) => {
+						if (location.success) {
+							myLocation.text = `Lat : ${location.coords.latitude}\nLong : ${location.coords.longitude}`;
+						} else {
+							console.error(location.message);
+						}
+					}
+				});
 			} else {
-				//Alert user to allow permissions from setting
+				console.error(check.message);
+			}
+		}
+	});
+});
+
+getMyLastLocation.addEventListener("click", () => {
+	locationservices.getLastLocation({
+		onComplete: (location) => {
+			if (location.success) {
+				myLocation.text = `Lat : ${location.coords.latitude}\nLong : ${location.coords.longitude}`;
+			} else {
+				console.error(location.message);
+			}
+		}
+	});
+});
+
+locationservices.addEventListener('location', (location) => {
+	myLocation.text = `Lat : ${location.coords.latitude}\nLong : ${location.coords.longitude}`;
+});
+
+startLocationUpdates.addEventListener("click", () => {
+	locationservices.startLocationUpdates({
+		interval: 10000,
+		fastestInterval: 5000,
+		priority: locationservices.PRIORITY_HIGH_ACCURACY,
+		onComplete: (e) => {
+			if (e.success) {
+				console.info("startLocationUpdates ::", "DONE");
+			} else {
+				console.info("startLocationUpdates ::", e.message);
+			}
+		}
+	});
+});
+
+stopLocationUpdates.addEventListener("click", () => {
+	locationservices.stopLocationUpdates({
+		onComplete: (e) => {
+			if (e.success) {
+				console.info("stopLocationUpdates ::", "DONE");
+			} else {
+				console.info("stopLocationUpdates ::", e.message);
+			}
+		}
+	});
+});
+
+win.addEventListener('open', () => {
+	if (!Ti.Geolocation.hasLocationPermissions(Ti.Geolocation.AUTHORIZATION_WHEN_IN_USE)) {
+		Ti.Geolocation.requestLocationPermissions(Ti.Geolocation.AUTHORIZATION_WHEN_IN_USE, (e) => {
+			if (!e.success) {
+				console.warn("Permissions is denied");
 			}
 		});
 	}
 });
 
 win.open();
-
