@@ -1,20 +1,4 @@
-apply plugin: 'java'
-
-repositories {
-	google()
-	jcenter()
-	mavenCentral()
-}
 
 dependencies {
-  compile 'com.google.android.gms:play-services:12.0.1'
-}
-
-configurations.all {
-  transitive = false
-}
-
-task getDeps(type: Copy) {
-	from sourceSets.main.runtimeClasspath
-	into 'lib/'
+	implementation 'com.google.android.gms:play-services-location:17.1.0'
 }
