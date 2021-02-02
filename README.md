@@ -1,4 +1,4 @@
-# Titanium Location Services Module for Andorid
+# Titanium Location Services Module for Android
 
 Turn on GPS settings automatically and get your current or last location.
 
