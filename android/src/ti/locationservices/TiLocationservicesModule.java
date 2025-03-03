@@ -6,12 +6,12 @@ import android.location.Location;
 import com.google.android.gms.common.api.ResolvableApiException;
 import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.LocationCallback;
-import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationResult;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.location.LocationSettingsRequest;
 import com.google.android.gms.location.LocationSettingsResponse;
 import com.google.android.gms.location.LocationSettingsStatusCodes;
+import com.google.android.gms.location.Priority;
 import com.google.android.gms.tasks.Task;
 
 import org.appcelerator.kroll.KrollDict;
@@ -22,20 +22,20 @@ import org.appcelerator.kroll.common.Log;
 import org.appcelerator.titanium.TiApplication;
 import org.appcelerator.titanium.TiBaseActivity;
 import org.appcelerator.titanium.TiLifecycle;
-import org.appcelerator.titanium.util.TiConvert;
 
 import static android.app.Activity.RESULT_OK;
+
+import static ti.locationservices.Utils.createLocationPayload;
+
+import androidx.annotation.NonNull;
 
 
 @Kroll.module(name = "TiLocationservices", id = "ti.locationservices")
 public class TiLocationservicesModule extends KrollModule {
 
     private static final String LCAT = "TiLocationservicesModule";
-    private final TiApplication context = TiApplication.getInstance();
-    private final FusedLocationProviderClient mFusedLocationClient;
-    private final LocationRequest locationRequest;
-    private final LocationCallback locationCallback;
-    private final LocationSettingsRequest.Builder builder;
+    private FusedLocationProviderClient mFusedLocationClient;
+    private LocationCallback locationCallback;
     private int REQUEST_CHECK_SETTINGS;
 
     @Kroll.constant
@@ -48,260 +48,152 @@ public class TiLocationservicesModule extends KrollModule {
     public static final int PRIORITY_NO_POWER = 4;
 
 
-    public TiLocationservicesModule() {
-        super();
+    private FusedLocationProviderClient createLocationClient() {
+        return LocationServices.getFusedLocationProviderClient(TiApplication.getAppRootOrCurrentActivity());
+    }
 
-        mFusedLocationClient = LocationServices.getFusedLocationProviderClient(context.getCurrentActivity());
+    private FusedLocationProviderClient getOrCreateLocationClient() {
+        if (mFusedLocationClient == null) {
+            mFusedLocationClient = createLocationClient();
+        }
 
-        locationRequest = LocationRequest.create();
-        locationRequest.setInterval(10000);
-        locationRequest.setFastestInterval(5000);
-        locationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
+        return mFusedLocationClient;
+    }
 
-        locationCallback = new LocationCallback() {
-            @Override
-            public void onLocationResult(LocationResult locationResult) {
-                if (locationResult != null) {
+    private LocationCallback getOrCreateLocationCallback() {
+        if (locationCallback == null) {
+            locationCallback = new LocationCallback() {
+                @Override
+                public void onLocationResult(@NonNull LocationResult locationResult) {
                     for (Location location : locationResult.getLocations()) {
                         if (location != null) {
-                            KrollDict coords = new KrollDict();
-                            coords.put("latitude", location.getLatitude());
-                            coords.put("longitude", location.getLongitude());
-
-                            KrollDict data = new KrollDict();
-                            data.put("coords", coords);
-                            data.put("accuracy", location.getAccuracy());
-                            data.put("altitude", location.getAltitude());
-                            data.put("provider", location.getProvider());
-                            data.put("speed", location.getSpeed());
-                            data.put("bearing", location.getBearing());
-                            data.put("time", location.getTime());
-                            data.put("isFromMockProvider", location.isFromMockProvider());
-                            fireEvent("location", data);
+                            fireEvent("location", createLocationPayload(location));
                         }
                     }
                 }
-            }
-        };
+            };
+        }
 
-        builder = new LocationSettingsRequest.Builder().addLocationRequest(locationRequest);
-        builder.setAlwaysShow(true);
+        return locationCallback;
     }
 
-    @Kroll.onAppCreate
-    public static void onAppCreate(TiApplication app) {
-    }
-
-    // Methods
     @Kroll.method
     public void checkLocationSettings(KrollDict dict) {
-        Task<LocationSettingsResponse> result = LocationServices.getSettingsClient(context.getCurrentActivity()).checkLocationSettings(builder.build());
+        LocationSettingsRequest.Builder builder = new LocationSettingsRequest
+                .Builder()
+                .addLocationRequest(Utils.createLocationRequest(null));
 
-        if (dict.containsKeyAndNotNull("onComplete")) {
-            KrollFunction completeCallback = (KrollFunction) dict.get("onComplete");
-            KrollDict data = new KrollDict();
+        builder.setAlwaysShow(true);
 
-            result.addOnSuccessListener(locationSettingsResponse -> {
-                data.put("success", true);
-                completeCallback.callAsync(getKrollObject(), data);
-            });
+        TiBaseActivity baseActivity = (TiBaseActivity) TiApplication.getAppCurrentActivity();
+        Task<LocationSettingsResponse> result = LocationServices.getSettingsClient(baseActivity).checkLocationSettings(builder.build());
 
-            result.addOnFailureListener(e -> {
-                if (e instanceof ResolvableApiException) {
-                    ResolvableApiException resolvable = (ResolvableApiException) e;
+        KrollFunction completeCallback = (KrollFunction) dict.get("onComplete");
 
-                    if (resolvable.getStatusCode() == LocationSettingsStatusCodes.RESOLUTION_REQUIRED) {
-                        try {
-                            Log.i(LCAT, "Location Settings are not satisfied, setting dialog going to show now");
+        result.addOnSuccessListener(locationSettingsResponse -> sendUpdate(completeCallback, true, ""));
 
-                            TiBaseActivity baseActivity = (TiBaseActivity) context.getCurrentActivity();
-                            REQUEST_CHECK_SETTINGS = baseActivity.getUniqueResultCode();
+        result.addOnFailureListener(e -> {
+            if (e instanceof ResolvableApiException resolvable) {
+                if (resolvable.getStatusCode() == LocationSettingsStatusCodes.RESOLUTION_REQUIRED) {
+                    try {
+                        Log.i(LCAT, "Location Settings are not satisfied, setting dialog going to show now");
 
-                            final TiLifecycle.OnActivityResultEvent resultEvent = (activity, requestCode, resultCode, intent) -> {
-                                if (requestCode == REQUEST_CHECK_SETTINGS) {
-                                    if (resultCode == RESULT_OK) {
-                                        data.put("success", true);
-                                    } else {
-                                        data.put("success", false);
-                                        data.put("message", "Failed :: User canceled");
-                                    }
-                                    completeCallback.callAsync(getKrollObject(), data);
-                                }
-                            };
+                        REQUEST_CHECK_SETTINGS = baseActivity.getUniqueResultCode();
+                        
+                        final TiLifecycle.OnActivityResultEvent resultEvent = (activity, requestCode, resultCode, intent) -> {
+                            if (requestCode == REQUEST_CHECK_SETTINGS) {
+                                sendUpdate(completeCallback, resultCode == RESULT_OK, "");
+                            }
+                        };
 
-                            baseActivity.addOnActivityResultListener(resultEvent);
-                            resolvable.startResolutionForResult(baseActivity, REQUEST_CHECK_SETTINGS);
+                        baseActivity.addOnActivityResultListener(resultEvent);
+                        resolvable.startResolutionForResult(baseActivity, REQUEST_CHECK_SETTINGS);
 
-                        } catch (Exception exception) {
-                            data.put("success", false);
-                            data.put("message", "Failed :: " + exception.getMessage());
-                            completeCallback.callAsync(getKrollObject(), data);
-                        }
-                    } else {
-                        Log.i(LCAT, "Location settings can't be changed to meet the requirements, no dialog pops up");
-                        data.put("success", false);
-                        data.put("message", "Failed :: " + LocationSettingsStatusCodes.getStatusCodeString(resolvable.getStatusCode()));
-                        completeCallback.callAsync(getKrollObject(), data);
+                    } catch (Exception exception) {
+                        sendUpdate(completeCallback, false, exception.getMessage());
                     }
                 } else {
-                    data.put("success", false);
-                    data.put("message", "Failed :: " + e.getMessage());
-                    completeCallback.callAsync(getKrollObject(), data);
+                    Log.i(LCAT, "Location settings can't be changed to meet the requirements, no dialog pops up");
+                    sendUpdate(completeCallback, false, LocationSettingsStatusCodes.getStatusCodeString(resolvable.getStatusCode()));
                 }
-            });
-        } else {
-            Log.e(LCAT, "Missing or Null onComplete() method inside checkLocationSettings()");
-        }
+            } else {
+                sendUpdate(completeCallback, false, e.getMessage());
+            }
+        });
     }
 
     @SuppressLint("MissingPermission")
     @Kroll.method
     public void getCurrentLocation(KrollDict dict) {
-        Task<Location> locationTask = mFusedLocationClient.getCurrentLocation(LocationRequest.PRIORITY_HIGH_ACCURACY, null);
+        KrollFunction completeCallback = (KrollFunction) dict.get("onComplete");
 
-        if (dict.containsKeyAndNotNull("onComplete")) {
-            KrollFunction completeCallback = (KrollFunction) dict.get("onComplete");
-            KrollDict data = new KrollDict();
-
-            locationTask.addOnSuccessListener(location -> {
-                if (location != null) {
-                    KrollDict coords = new KrollDict();
-                    coords.put("latitude", location.getLatitude());
-                    coords.put("longitude", location.getLongitude());
-
-                    data.put("success", true);
-                    data.put("coords", coords);
-                    data.put("accuracy", location.getAccuracy());
-                    data.put("altitude", location.getAltitude());
-                    data.put("provider", location.getProvider());
-                    data.put("speed", location.getSpeed());
-                    data.put("bearing", location.getBearing());
-                    data.put("time", location.getTime());
-                    data.put("isFromMockProvider", location.isFromMockProvider());
-                } else {
-                    data.put("success", false);
-                    data.put("message", "Failed :: There is no cached location in this device, call startLocationUpdates() to get current location");
-                }
-                completeCallback.callAsync(getKrollObject(), data);
-            });
-
-            locationTask.addOnFailureListener(e -> {
-                data.put("success", false);
-                data.put("message", "Failed :: " + e.getMessage());
-                completeCallback.callAsync(getKrollObject(), data);
-            });
-        }
+        createLocationClient()
+                .getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
+                .addOnSuccessListener(location -> onLocationListenerSuccess(location, completeCallback))
+                .addOnFailureListener(e -> sendUpdate(completeCallback, false, e.getMessage()));
     }
-
 
     @SuppressLint("MissingPermission")
     @Kroll.method
     public void getLastLocation(KrollDict dict) {
-        Task<Location> locationTask = mFusedLocationClient.getLastLocation();
+        KrollFunction completeCallback = (KrollFunction) dict.get("onComplete");
 
-        if (dict.containsKeyAndNotNull("onComplete")) {
-            KrollFunction completeCallback = (KrollFunction) dict.get("onComplete");
-            KrollDict data = new KrollDict();
-
-            locationTask.addOnSuccessListener(location -> {
-                if (location != null) {
-                    KrollDict coords = new KrollDict();
-                    coords.put("latitude", location.getLatitude());
-                    coords.put("longitude", location.getLongitude());
-
-                    data.put("success", true);
-                    data.put("coords", coords);
-                    data.put("accuracy", location.getAccuracy());
-                    data.put("altitude", location.getAltitude());
-                    data.put("provider", location.getProvider());
-                    data.put("speed", location.getSpeed());
-                    data.put("bearing", location.getBearing());
-                    data.put("time", location.getTime());
-                    data.put("isFromMockProvider", location.isFromMockProvider());
-                } else {
-                    data.put("success", false);
-                    data.put("message", "Failed :: There is no cached location in this device, call startLocationUpdates() to get current location");
-                }
-                completeCallback.callAsync(getKrollObject(), data);
-            });
-
-            locationTask.addOnFailureListener(e -> {
-                data.put("success", false);
-                data.put("message", "Failed :: " + e.getMessage());
-                completeCallback.callAsync(getKrollObject(), data);
-            });
-        }
+        createLocationClient()
+                .getLastLocation()
+                .addOnSuccessListener(location -> onLocationListenerSuccess(location, completeCallback))
+                .addOnFailureListener(e -> sendUpdate(completeCallback, false, e.getMessage()));
     }
 
     @Kroll.method
     @SuppressLint("MissingPermission")
     public void startLocationUpdates(KrollDict dict) {
-        if (dict.containsKey("interval")) {
-            locationRequest.setInterval(TiConvert.toInt(dict.getInt("interval")));
-        }
+        KrollFunction completeCallback = (KrollFunction) dict.get("onComplete");
 
-        if (dict.containsKey("fastestInterval")) {
-            locationRequest.setFastestInterval(TiConvert.toInt(dict.getInt("fastestInterval")));
-        }
-
-        if (dict.containsKey("priority")) {
-            int priority = TiConvert.toInt(dict, "priority");
-            switch (priority) {
-                case 1:
-                    locationRequest.setPriority(LocationRequest.PRIORITY_BALANCED_POWER_ACCURACY);
-                    break;
-                case 2:
-                    locationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
-                    break;
-                case 3:
-                    locationRequest.setPriority(LocationRequest.PRIORITY_LOW_POWER);
-                    break;
-                default:
-                    locationRequest.setPriority(LocationRequest.PRIORITY_NO_POWER);
-                    break;
-
-            }
-        }
-
-        Task<Void> locationTask = mFusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, null);
-
-        if (dict.containsKeyAndNotNull("onComplete")) {
-            KrollFunction completeCallback = (KrollFunction) dict.get("onComplete");
-            KrollDict data = new KrollDict();
-
-            locationTask.addOnSuccessListener(aVoid -> {
-                data.put("success", true);
-                completeCallback.callAsync(getKrollObject(), data);
-
-            });
-
-            locationTask.addOnFailureListener(e -> {
-                data.put("success", false);
-                data.put("message", "Failed :: " + e.getMessage());
-                completeCallback.callAsync(getKrollObject(), data);
-            });
-        }
+        getOrCreateLocationClient().requestLocationUpdates(
+                Utils.createLocationRequest(dict),
+                        getOrCreateLocationCallback(),
+                        null)
+                .addOnSuccessListener(aVoid -> sendUpdate(completeCallback, true, ""))
+                .addOnFailureListener(e -> sendUpdate(completeCallback, false, e.getMessage()));
     }
 
     @Kroll.method
     public void stopLocationUpdates(KrollDict dict) {
-        Task<Void> locationTask = mFusedLocationClient.removeLocationUpdates(locationCallback);
+        KrollFunction completeCallback = (KrollFunction) dict.get("onComplete");
 
-        if (dict.containsKeyAndNotNull("onComplete")) {
-            KrollFunction completeCallback = (KrollFunction) dict.get("onComplete");
-            KrollDict data = new KrollDict();
-
-            locationTask.addOnSuccessListener(aVoid -> {
-                data.put("success", true);
-                completeCallback.callAsync(getKrollObject(), data);
-            });
-
-            locationTask.addOnFailureListener(e -> {
-                data.put("success", false);
-                data.put("message", "Failed :: " + e.getMessage());
-                completeCallback.callAsync(getKrollObject(), data);
-            });
+        if (locationCallback == null) {
+            sendUpdate(completeCallback, false, "Cannot stop location updates since its callback is null");
+            return;
         }
+
+        getOrCreateLocationClient().removeLocationUpdates(locationCallback)
+                .addOnSuccessListener(aVoid -> sendUpdate(completeCallback, true, ""))
+                .addOnFailureListener(e -> sendUpdate(completeCallback, false, e.getMessage()));
+    }
+
+    private void sendUpdate(KrollFunction callback, boolean success, String message) {
+        if (callback == null) {
+            return;
+        }
+
+        KrollDict data = new KrollDict();
+        data.put("success", success);
+        data.put("message", message);
+
+        callback.callAsync(getKrollObject(), data);
+    }
+
+    private void onLocationListenerSuccess(Location location, KrollFunction callback) {
+        if (callback == null) {
+            return;
+        }
+
+        if (location == null) {
+            sendUpdate(callback, false, "No cached location available");
+            return;
+        }
+
+        callback.callAsync(getKrollObject(), createLocationPayload(location));
     }
 }
 
