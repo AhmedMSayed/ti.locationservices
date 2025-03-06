@@ -93,7 +93,8 @@ public class TiLocationservicesModule extends KrollModule {
         result.addOnSuccessListener(locationSettingsResponse -> sendUpdate(completeCallback, true, ""));
 
         result.addOnFailureListener(e -> {
-            if (e instanceof ResolvableApiException resolvable) {
+            if (e instanceof ResolvableApiException) {
+                ResolvableApiException resolvable = (ResolvableApiException) e;
                 if (resolvable.getStatusCode() == LocationSettingsStatusCodes.RESOLUTION_REQUIRED) {
                     try {
                         Log.i(LCAT, "Location Settings are not satisfied, setting dialog going to show now");
